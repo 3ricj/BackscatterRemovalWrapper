@@ -55,6 +55,10 @@ Compression=lzma2/normal
 SolidCompression=yes
 WizardStyle=modern
 
+; Custom icon for the setup executable itself (the app exe carries the same icon,
+; so shortcuts and the uninstall entry pick it up automatically).
+SetupIconFile=..\src\BsxtBatch.App\backscatter-fish.ico
+
 ; Close a running instance politely instead of failing the install/uninstall.
 CloseApplications=yes
 CloseApplicationsFilter=*.exe,*.dll

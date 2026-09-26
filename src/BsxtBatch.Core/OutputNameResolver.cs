@@ -2,12 +2,12 @@ using BsxtBatch.Core.Models;
 
 namespace BsxtBatch.Core;
 
-/// <summary>Builds the output path: same folder as the source, "BSXT" appended to the
+/// <summary>Builds the output path: same folder as the source, "-BSXT" appended to the
 /// file name, extension normalized per the approved format policy (JPG → .jpg,
 /// everything else → .tif).</summary>
 public static class OutputNameResolver
 {
-    public const string Suffix = "BSXT";
+    public const string Suffix = "-BSXT";
 
     public static string Resolve(string sourcePath)
     {
@@ -21,8 +21,8 @@ public static class OutputNameResolver
         return Path.Combine(dir, name + Suffix + outExt);
     }
 
-    /// <summary>Guards against feeding the tool its own outputs (photoBSXT.tif →
-    /// photoBSXTBSXT.tif) and against a source that already carries the suffix.</summary>
+    /// <summary>Guards against feeding the tool its own outputs (photo-BSXT.tif →
+    /// photo-BSXT-BSXT.tif) and against a source that already carries the suffix.</summary>
     public static bool LooksLikeBsxtOutput(string sourcePath)
     {
         var name = Path.GetFileNameWithoutExtension(sourcePath);
