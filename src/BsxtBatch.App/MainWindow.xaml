@@ -1,0 +1,83 @@
+﻿<Window x:Class="BsxtBatch.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:conv="clr-namespace:BsxtBatch.App.Converters"
+        Title="BsxtBatch — run the Photoshop BSXT action on a pile of files"
+        Width="980" Height="680" MinWidth="720" MinHeight="480"
+        AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
+
+    <Window.Resources>
+        <conv:StatusToBrushConverter x:Key="StatusBrush" />
+    </Window.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" MinHeight="120" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="2*" MinHeight="100" />
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal">
+            <Button Content="Add Files…"    Command="{Binding AddFilesCommand}"    Padding="12,4" Margin="0,0,8,0" />
+            <Button Content="Add Folder…"   Command="{Binding AddFolderCommand}"   Padding="12,4" Margin="0,0,8,0" />
+            <Button Content="Remove Selected" Command="{Binding RemoveSelectedCommand}" Padding="12,4" Margin="0,0,8,0" />
+            <Button Content="Clear List"    Command="{Binding ClearListCommand}"   Padding="12,4" />
+        </StackPanel>
+
+        <!-- Hint -->
+        <TextBlock Grid.Row="1" Margin="0,8,0,8" Foreground="Gray" TextWrapping="Wrap"
+                   Text="Drop files or folders anywhere in this window. RAW / TIFF / PSD export as photoBSXT.tif next to the original; JPG exports as photoBSXT.jpg. Originals are never modified. Files that already contain BSXT/Cleanup layers are skipped." />
+
+        <!-- Job list -->
+        <ListView Grid.Row="2" ItemsSource="{Binding Jobs}" SelectedItem="{Binding SelectedJob}">
+            <ListView.View>
+                <GridView>
+                    <GridViewColumn Header="File" Width="300">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding FileName}" ToolTip="{Binding SourcePath}" />
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Header="Kind" Width="70" DisplayMemberBinding="{Binding Kind}" />
+                    <GridViewColumn Header="Status" Width="90">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Status}" Foreground="{Binding Status, Converter={StaticResource StatusBrush}}" />
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Header="Detail" Width="440">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Detail}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Detail}" />
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                </GridView>
+            </ListView.View>
+        </ListView>
+
+        <!-- Progress + run controls -->
+        <DockPanel Grid.Row="3" Margin="0,10,0,10">
+            <Button DockPanel.Dock="Right" Content="Cancel" Command="{Binding CancelCommand}"
+                    Padding="14,4" Margin="8,0,0,0" />
+            <Button DockPanel.Dock="Right" Content="▶  Run BSXT Batch" Command="{Binding RunCommand}"
+                    Padding="14,4" FontWeight="Bold" />
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding ProgressText}" VerticalAlignment="Center"
+                           Margin="8,0,12,0" MinWidth="64" TextAlignment="Right" />
+                <!-- ProgressBar.Value defaults to TwoWay; ProgressPercent is read-only, so pin OneWay -->
+                <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Minimum="0" Maximum="100" Height="18"
+                             VerticalAlignment="Center" />
+            </DockPanel>
+        </DockPanel>
+
+        <!-- Log -->
+        <ListBox Grid.Row="4" ItemsSource="{Binding LogLines}" FontFamily="Consolas" FontSize="12"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" x:Name="LogBox" />
+    </Grid>
+</Window>
