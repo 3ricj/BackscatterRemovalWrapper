@@ -78,7 +78,7 @@ public sealed class BatchProcessor
 
             if (OutputNameResolver.LooksLikeBsxtOutput(job.SourcePath))
             {
-                Skip(job, "File name already ends with 'BSXT' — looks like a previous output; not processed again.");
+                Skip(job, "File name already ends with '-BSXT' — looks like a previous output; not processed again.");
                 skipped++;
                 continue;
             }
@@ -87,6 +87,16 @@ public sealed class BatchProcessor
             if (!File.Exists(job.SourcePath))
             {
                 Skip(job, "File not found.");
+                skipped++;
+                continue;
+            }
+
+            // Never overwrite: an existing output means the file was already processed
+            // (or the name is taken) — skip instead of clobbering.
+            var plannedOutput = OutputNameResolver.Resolve(job.SourcePath);
+            if (File.Exists(plannedOutput))
+            {
+                Skip(job, $"Output '{Path.GetFileName(plannedOutput)}' already exists — not overwriting. Delete or rename it first.");
                 skipped++;
                 continue;
             }

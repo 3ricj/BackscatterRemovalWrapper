@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:BsxtBatch.App.Converters"
         Title="BsxtBatch — run the Photoshop BSXT action on a pile of files"
+        Icon="backscatter-fish.ico"
         Width="980" Height="680" MinWidth="720" MinHeight="480"
         AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
 
@@ -29,7 +30,7 @@
 
         <!-- Hint -->
         <TextBlock Grid.Row="1" Margin="0,8,0,8" Foreground="Gray" TextWrapping="Wrap"
-                   Text="Drop files or folders anywhere in this window. RAW / TIFF / PSD export as photoBSXT.tif next to the original; JPG exports as photoBSXT.jpg. Originals are never modified. Files that already contain BSXT/Cleanup layers are skipped." />
+                   Text="Drop files or folders anywhere in this window. RAW / TIFF / PSD export as photo-BSXT.tif next to the original; JPG exports as photo-BSXT.jpg. Originals are never modified and existing files are never overwritten. Files that already contain BSXT/Cleanup layers are skipped." />
 
         <!-- Job list -->
         <ListView Grid.Row="2" ItemsSource="{Binding Jobs}" SelectedItem="{Binding SelectedJob}">

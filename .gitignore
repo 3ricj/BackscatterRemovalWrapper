@@ -29,15 +29,12 @@ coverage*.json
 coverage*.xml
 coverage*.info
 
-# ---- Test data (large media fixtures, regenerable via spike scripts) ----
-testdata/*
-!testdata/small.jpg
-!testdata/notes.txt
-
-# ---- Spike scratch logs ----
-spike/*.log
-spike/*_stdout.txt
-spike/*_stderr.txt
+# ---- Not needed for building (excluded) ----
+# spike/ and testdata/ are dev-only scratch/fixtures; plans/ is internal documentation.
+# None are referenced by the solution, projects, or tests.
+spike/
+testdata/
+plans/
 
 # ---- OS junk ----
 Thumbs.db
