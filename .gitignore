@@ -1,0 +1,50 @@
+# ---- .NET build output ----
+bin/
+obj/
+publish/
+artifacts/
+
+# ---- Installer artifacts ----
+installer/Output/
+
+# ---- IDE / editor ----
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# ---- NuGet ----
+*.nupkg
+*.snupkg
+packages/
+
+# ---- Test results / coverage ----
+TestResults/
+*.trx
+*.coverage
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# ---- Test data (large media fixtures, regenerable via spike scripts) ----
+testdata/*
+!testdata/small.jpg
+!testdata/notes.txt
+
+# ---- Spike scratch logs ----
+spike/*.log
+spike/*_stdout.txt
+spike/*_stderr.txt
+
+# ---- OS junk ----
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# ---- Misc ----
+*.log
+*.tmp
