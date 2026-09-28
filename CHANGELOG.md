@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.1.1 — 2026-09-28
+
+### New: output folder override
+
+- **Output folder row with Browse…/Clear buttons** in the main window. By default
+  outputs are written next to each source file (unchanged behaviour); clicking
+  **Browse…** redirects every export of the batch into one chosen folder
+  (created if it does not exist). **Clear** returns to the default.
+- **Write permission is checked when clicking Start**: if the selected output
+  folder cannot be created or is not writable, the batch aborts before touching
+  Photoshop and explains why (MessageBox in the GUI, `Aborted: ...` in the CLI).
+- CLI front-end: new `-o`/`--output-dir <dir>` option, e.g.
+  `BsxtBatch.Cli -f tif,psd -o D:\results photo.ARW`.
+
+### Fixed / internal
+
+- `ExportOptions` gained `OutputDirectory`/`HasOutputOverride`; `OutputNameResolver`
+  honours the override. Test suite expanded (58 tests, all passing).
+
+**Download:** `BsxtBatch-Setup-1.1.1.exe` (per-user install, no admin rights;
+installs over v1.1 in place).
+
 ## v1.1 — 2026-09-28
 
 ### New: user-selectable export formats

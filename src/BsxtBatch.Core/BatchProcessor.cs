@@ -64,6 +64,21 @@ public sealed class BatchProcessor
         if (!export.AnySelected)
             throw new ArgumentException("At least one export format must be selected.", nameof(export));
 
+        // Output-folder override (checked at batch start, i.e. "when clicking Start"):
+        // the shared target must exist (created if missing) and be writable, otherwise
+        // no file could ever be written and the whole run is pointless.
+        if (export.HasOutputOverride)
+        {
+            var dir = export.OutputDirectory!;
+            try { Directory.CreateDirectory(dir); }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Output folder '{dir}' cannot be created: {ex.Message}");
+            }
+            if (!DirectoryHasWriteAccess(dir))
+                throw new InvalidOperationException($"No write permission in output folder '{dir}'.");
+        }
+
         int completed = 0, skipped = 0, failed = 0;
 
         // Pre-flight (no Photoshop needed): reject unsupported kinds, our own outputs,
@@ -108,7 +123,9 @@ public sealed class BatchProcessor
                 continue;
             }
 
-            if (!DirectoryHasWriteAccess(dir))
+            // With an output override the shared target was already verified once above;
+            // otherwise every output lands in this job's own source folder.
+            if (!export.HasOutputOverride && !DirectoryHasWriteAccess(dir))
             {
                 Skip(job, $"No write permission in '{dir}' — cannot place the output there.");
                 skipped++;

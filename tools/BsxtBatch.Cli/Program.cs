@@ -7,8 +7,9 @@ using BsxtBatch.Core.Models;
 //   - documents that already contain BSXT/Cleanup layers are SKIPPED with a warning
 //   - files already named *BSXT are skipped before Photoshop is even touched
 //
-// Usage: BsxtBatch.Cli [-f jpg,tif,psd] <file> [<file> ...]
+// Usage: BsxtBatch.Cli [-f jpg,tif,psd] [-o <dir>] <file> [<file> ...]
 // Default export format: tif (matches the GUI default).
+// -o redirects all outputs to one folder (default: each file's own folder).
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
@@ -18,7 +19,7 @@ if (args.Length == 0)
     return 2;
 }
 
-var export = ExportOptions.DefaultTiff;
+var export = new ExportOptions();   // fresh instance: -o mutates OutputDirectory
 var files = new List<string>();
 for (int i = 0; i < args.Length; i++)
 {
@@ -35,6 +36,15 @@ for (int i = 0; i < args.Length; i++)
             Console.Error.WriteLine(ex.Message);
             return 2;
         }
+    }
+    else if (args[i] is "-o" or "--output-dir")
+    {
+        if (i + 1 >= args.Length)
+        {
+            Console.Error.WriteLine("-o requires a folder path.");
+            return 2;
+        }
+        export.OutputDirectory = Path.GetFullPath(args[++i]);
     }
     else
     {
@@ -60,10 +70,21 @@ foreach (var arg in files)
     });
 }
 
+
 var processor = new BatchProcessor();
 processor.Log += Console.WriteLine;
 
-var result = await processor.RunAsync(jobs, export);
+BatchRunResult result;
+try
+{
+    result = await processor.RunAsync(jobs, export);
+}
+catch (InvalidOperationException ex)
+{
+    // Output-folder override rejected at start (cannot create / not writable).
+    Console.Error.WriteLine($"Aborted: {ex.Message}");
+    return 4;
+}
 
 Console.WriteLine();
 foreach (var job in jobs)

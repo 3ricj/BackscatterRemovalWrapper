@@ -15,7 +15,7 @@
 ; -----------------------------------------------------------------------------
 
 #define MyAppName      "BsxtBatch"
-#define MyAppVersion   "1.1.0"
+#define MyAppVersion   "1.1.1"
 #define MyAppPublisher "Backscatter Removal"
 #define MyAppURL       "https://github.com/3ricj/BackscatterRemovalWrapper"
 #define MyAppExeName   "BsxtBatch.App.exe"

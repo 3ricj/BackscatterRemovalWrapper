@@ -6,7 +6,9 @@ existing files are **never overwritten**.
 
 Pick the output format(s) with the **Export** checkboxes — **JPG**, **TIF**, and/or
 **PSD** (TIF is on by default, and at least one must stay checked). PSD copies keep
-the action's layers.
+the action's layers. Use **Browse…** next to **Output folder** to redirect every
+result into one folder instead of next to each source (write permission is checked
+when you press Start).
 
 Drop files (or whole folders) onto the window, press **Run BSXT Batch**, done.
 
@@ -24,7 +26,8 @@ Drop files (or whole folders) onto the window, press **Run BSXT Batch**, done.
   obtain it first and load it — BsxtBatch will not work without it.
   Photoshop 27 removed COM/ExtendScript *enumeration* of actions, so the app cannot
   pre-check this — if the set is missing the batch aborts with a clear message.
-- Write permission in each source folder (output goes beside the source).
+- Write permission in each source folder (output goes beside the source), or in the
+  folder chosen via the **Output folder** override.
 
 ## Running
 
@@ -40,7 +43,7 @@ From source (.NET 9 SDK):
 
 Build a Windows installer (per-user, no admin rights required):
 
-    powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1 -Version 1.1.0
+    powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1 -Version 1.1.1
 
 The script publishes the app as a self-contained single-file win-x64 exe, then compiles
 `installer\BsxtBatch.iss` with Inno Setup, producing:
@@ -62,8 +65,9 @@ stay constant across releases so upgrades replace rather than side-load.
 For every file: `Open` → guard checks → `DoAction("BSXT_ACTION (Click Here)", "BSXT")`
 → `SaveAs(<name>-BSXT.<ext>, asCopy: true)` once per selected format → `Close(discard)`.
 
-The export format is chosen by the user, not by the input type. Every selected format
-is written next to the original:
+The export format is chosen by the user, not by the input type. By default every
+selected format is written next to the original (use **Browse…** under **Output
+folder** to send all results to a single shared folder instead):
 
 | Selected format | Output | Details |
 |---|---|---|
@@ -77,6 +81,14 @@ action's layers instead of flattening them.
 
 Dialogs are suppressed (`DisplayDialogs = psDisplayNoDialogs`) so the batch never hangs;
 a COM message filter transparently retries Photoshop's "application busy" rejections.
+
+### Output folder (default: source folder)
+
+Outputs normally land beside each source file. Clicking **Browse…** on the
+**Output folder** row redirects **all** exports of the batch into one chosen folder
+(created if missing); **Clear** restores the default. When you press **Run**, the
+folder is verified to be writable **before** Photoshop is touched — if it isn't, the
+batch aborts with a clear message instead of failing file by file.
 
 ### Never-overwrite rule (per format)
 
@@ -122,9 +134,10 @@ Headless pipeline check against a live Photoshop:
 
     tools\BsxtBatch.Cli\bin\Release\net9.0-windows\BsxtBatch.Cli.exe photo.ARW other.tif
 
-The CLI takes the same export selection via `-f` (default `tif`):
+The CLI takes the same export selection via `-f` (default `tif`) and an optional
+output-folder override via `-o`:
 
-    tools\BsxtBatch.Cli\bin\Release\net9.0-windows\BsxtBatch.Cli.exe -f tif,psd photo.ARW
+    tools\BsxtBatch.Cli\bin\Release\net9.0-windows\BsxtBatch.Cli.exe -f tif,psd -o D:\results photo.ARW
 
 ## Troubleshooting
 
@@ -137,3 +150,4 @@ The CLI takes the same export selection via `-f` (default `tif`):
 | `application is busy` (RPC_E_SERVERCALL_RETRYLATER) | Handled automatically by the message filter; if seen, close other Photoshop dialogs. |
 | RAW opens with unexpected look | Camera Raw uses default settings under automation (dialogs are suppressed). Tune defaults in ACR's preferences if needed. |
 | Output is not written | Check write permission on the source folder (the app pre-checks and skips otherwise). |
+| Batch aborts: `No write permission in output folder` | The folder chosen via Browse… (or `-o`) is read-only or otherwise unwritable — pick another folder or clear the override. |

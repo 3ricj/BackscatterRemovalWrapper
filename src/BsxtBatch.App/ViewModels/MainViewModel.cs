@@ -21,6 +21,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _exportJpg;
     private bool _exportTiff = true;   // default selection
     private bool _exportPsd;
+    private string? _outputFolder;     // null/empty = same folder as each source
 
     public MainViewModel()
     {
@@ -30,6 +31,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ClearListCommand = new RelayCommand(_ => ClearList(), _ => !IsRunning && Jobs.Count > 0);
         RunCommand = new RelayCommand(async _ => await RunAsync(), _ => !IsRunning && Jobs.Any(j => j.Status == JobStatus.Queued));
         CancelCommand = new RelayCommand(_ => _cts?.Cancel(), _ => IsRunning);
+        BrowseOutputFolderCommand = new RelayCommand(_ => BrowseOutputFolder(), _ => !IsRunning);
+        ClearOutputFolderCommand = new RelayCommand(_ => ClearOutputFolder(), _ => !IsRunning && HasOutputFolderOverride);
 
         _processor.Log += line => OnUi(() => AppendLog(line));
         _processor.JobStarting += _ => OnUi(() => { });          // status bindings refresh themselves
@@ -99,7 +102,39 @@ public sealed class MainViewModel : INotifyPropertyChanged
     /// <summary>False while no format checkbox is selected — the Run button warns instead of running.</summary>
     public bool HasExportFormatSelected => ExportJpg || ExportTiff || ExportPsd;
 
-    /// <summary>The current checkbox state as Core-level options.</summary>
+    // ── Output folder override ───────────────────────────────────────────────
+
+    /// <summary>Override folder for all outputs. Null/empty (default) = same folder as
+    /// each source file.</summary>
+    public string? OutputFolder
+    {
+        get => _outputFolder;
+        private set
+        {
+            _outputFolder = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(OutputFolderDisplay));
+            OnPropertyChanged(nameof(HasOutputFolderOverride));
+            OnExportFormatsChanged();   // refresh planned-output previews + command states
+        }
+    }
+
+    /// <summary>Text shown in the output-folder row (read-only TextBox).</summary>
+    public string OutputFolderDisplay =>
+        HasOutputFolderOverride ? OutputFolder! : "(same folder as each source)";
+
+    public bool HasOutputFolderOverride => !string.IsNullOrWhiteSpace(OutputFolder);
+
+    private void BrowseOutputFolder()
+    {
+        var dlg = new OpenFolderDialog { Title = "Select the output folder for all results" };
+        if (dlg.ShowDialog() == true)
+            OutputFolder = dlg.FolderName;
+    }
+
+    private void ClearOutputFolder() => OutputFolder = null;
+
+    /// <summary>The current checkbox + output-folder state as Core-level options.</summary>
     public ExportOptions CurrentExportOptions
     {
         get
@@ -108,7 +143,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (ExportJpg) formats |= ExportFormat.Jpeg;
             if (ExportTiff) formats |= ExportFormat.Tiff;
             if (ExportPsd) formats |= ExportFormat.Psd;
-            return new ExportOptions { Formats = formats };
+            return new ExportOptions { Formats = formats, OutputDirectory = OutputFolder };
         }
     }
 
@@ -134,6 +169,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public RelayCommand ClearListCommand { get; }
     public RelayCommand RunCommand { get; }
     public RelayCommand CancelCommand { get; }
+    public RelayCommand BrowseOutputFolderCommand { get; }
+    public RelayCommand ClearOutputFolderCommand { get; }
 
     // ── Importing ────────────────────────────────────────────────────────────
 
@@ -226,6 +263,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
             return;
         }
 
+        var export = CurrentExportOptions;
+
+        // Output-folder override: check write permission now, when Start is clicked,
+        // so the user gets one clear error instead of every job failing individually.
+        if (export.HasOutputOverride && !DirectoryHasWriteAccess(export.OutputDirectory!))
+        {
+            AppendLog($"⚠ No write permission in output folder '{export.OutputDirectory}'.");
+            MessageBox.Show(
+                $"No write permission in the selected output folder:\n\n{export.OutputDirectory}\n\nChoose another folder or clear the override.",
+                "BsxtBatch", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         foreach (var job in Jobs)
         {
             job.Status = JobStatus.Queued;
@@ -233,13 +283,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
             job.OutputPath = null;
         }
 
-        var export = CurrentExportOptions;
-
         _cts = new CancellationTokenSource();
         DoneCount = 0;
         TotalCount = Jobs.Count(j => j.Status == JobStatus.Queued);
         IsRunning = true;
-        AppendLog($"── Batch started (export: {string.Join(" + ", export.Selected().Select(ExportOptions.ExtensionFor))}) ──");
+        var formatsDesc = string.Join(" + ", export.Selected().Select(ExportOptions.ExtensionFor));
+        var outputDesc = export.HasOutputOverride ? export.OutputDirectory : "source folders";
+        AppendLog($"── Batch started (export: {formatsDesc}; output: {outputDesc}) ──");
 
         try
         {
@@ -260,6 +310,23 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     // ── Plumbing ─────────────────────────────────────────────────────────────
+
+    /// <summary>Probe-writes a temp file to test write access (same trick the processor uses).</summary>
+    private static bool DirectoryHasWriteAccess(string dir)
+    {
+        if (string.IsNullOrEmpty(dir)) return false;
+        try
+        {
+            var probe = Path.Combine(dir, $".bsxtwrite_{Guid.NewGuid():N}.tmp");
+            File.WriteAllText(probe, "");
+            File.Delete(probe);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private void BumpProgress()
     {
@@ -287,6 +354,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ClearListCommand.RaiseCanExecuteChanged();
         RunCommand.RaiseCanExecuteChanged();
         CancelCommand.RaiseCanExecuteChanged();
+        BrowseOutputFolderCommand.RaiseCanExecuteChanged();
+        ClearOutputFolderCommand.RaiseCanExecuteChanged();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

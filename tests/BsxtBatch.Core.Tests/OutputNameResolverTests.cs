@@ -44,9 +44,37 @@ public class OutputNameResolverTests
     }
 
     [Fact]
-    public void ResolveAll_rejects_empty_selection()
-        => Assert.ThrowsAny<ArgumentException>(
-            () => OutputNameResolver.ResolveAll(@"C:\pics\photo.jpg", new ExportOptions { Formats = ExportFormat.None }));
+    public void Output_override_redirects_all_formats_to_one_folder()
+    {
+        var options = new ExportOptions
+        {
+            Formats = ExportFormat.Jpeg | ExportFormat.Tiff | ExportFormat.Psd,
+            OutputDirectory = @"D:\results",
+        };
+
+        var result = OutputNameResolver.ResolveAll(@"C:\pics\sub\photo.arw", options);
+
+        Assert.Equal(
+            [@"D:\results\photo-BSXT.tif", @"D:\results\photo-BSXT.psd", @"D:\results\photo-BSXT.jpg"],
+            result);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Blank_output_override_falls_back_to_source_folder(string? overrideDir)
+        => Assert.Equal(
+            @"C:\pics\photo-BSXT.tif",
+            OutputNameResolver.Resolve(@"C:\pics\photo.jpg", ExportFormat.Tiff, overrideDir));
+
+    [Fact]
+    public void Output_override_flag_tracks_blankness()
+    {
+        Assert.False(ExportOptions.DefaultTiff.HasOutputOverride);
+        Assert.False(new ExportOptions { OutputDirectory = "  " }.HasOutputOverride);
+        Assert.True(new ExportOptions { OutputDirectory = @"D:\out" }.HasOutputOverride);
+    }
 
     [Theory]
     [InlineData(@"C:\pics\photo-BSXT.tif", true)]

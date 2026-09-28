@@ -16,6 +16,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" MinHeight="120" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="2*" MinHeight="100" />
@@ -51,12 +52,25 @@
             </TextBlock>
         </StackPanel>
 
+        <!-- Output folder override -->
+        <DockPanel Grid.Row="2" Margin="0,6,0,0">
+            <TextBlock DockPanel.Dock="Left" Text="Output folder:" VerticalAlignment="Center"
+                       FontWeight="Bold" Margin="0,0,8,0" />
+            <Button DockPanel.Dock="Right" Content="Clear" Command="{Binding ClearOutputFolderCommand}"
+                    Padding="10,3" Margin="8,0,0,0" ToolTip="Back to: same folder as each source file" />
+            <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding BrowseOutputFolderCommand}"
+                    Padding="10,3" />
+            <TextBox Text="{Binding OutputFolderDisplay, Mode=OneWay}" IsReadOnly="True"
+                     VerticalAlignment="Center" Background="Transparent" BorderBrush="#DDDDDD"
+                     Padding="4,2" ToolTip="Outputs go to this folder; default is each file's own folder." />
+        </DockPanel>
+
         <!-- Hint -->
-        <TextBlock Grid.Row="2" Margin="0,8,0,8" Foreground="Gray" TextWrapping="Wrap"
-                   Text="Drop files or folders anywhere in this window. Each file exports as photo-BSXT.tif / .jpg / .psd (the formats selected above) next to the original; PSD copies keep the action's layers. Originals are never modified and existing files are never overwritten. Files that already contain BSXT/Cleanup layers are skipped." />
+        <TextBlock Grid.Row="3" Margin="0,8,0,8" Foreground="Gray" TextWrapping="Wrap"
+                   Text="Drop files or folders anywhere in this window. Each file exports as photo-BSXT.tif / .jpg / .psd (the formats selected above) — by default next to the original, or into the output folder above when overridden; PSD copies keep the action's layers. Originals are never modified and existing files are never overwritten. Files that already contain BSXT/Cleanup layers are skipped." />
 
         <!-- Job list -->
-        <ListView Grid.Row="3" ItemsSource="{Binding Jobs}" SelectedItem="{Binding SelectedJob}">
+        <ListView Grid.Row="4" ItemsSource="{Binding Jobs}" SelectedItem="{Binding SelectedJob}">
             <ListView.View>
                 <GridView>
                     <GridViewColumn Header="File" Width="300">
@@ -86,7 +100,7 @@
         </ListView>
 
         <!-- Progress + run controls -->
-        <DockPanel Grid.Row="4" Margin="0,10,0,10">
+        <DockPanel Grid.Row="5" Margin="0,10,0,10">
             <Button DockPanel.Dock="Right" Content="Cancel" Command="{Binding CancelCommand}"
                     Padding="14,4" Margin="8,0,0,0" />
             <Button DockPanel.Dock="Right" Content="▶  Run BSXT Batch" Command="{Binding RunCommand}"
@@ -101,7 +115,7 @@
         </DockPanel>
 
         <!-- Log -->
-        <ListBox Grid.Row="5" ItemsSource="{Binding LogLines}" FontFamily="Consolas" FontSize="12"
+        <ListBox Grid.Row="6" ItemsSource="{Binding LogLines}" FontFamily="Consolas" FontSize="12"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" x:Name="LogBox" />
     </Grid>
 </Window>

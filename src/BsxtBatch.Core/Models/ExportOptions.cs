@@ -22,6 +22,13 @@ public sealed class ExportOptions
 
     public ExportFormat Formats { get; set; } = ExportFormat.Tiff;
 
+    /// <summary>Folder all outputs are written to. Null/empty (the default) means
+    /// "same folder as each source file"; set it to redirect every export elsewhere.</summary>
+    public string? OutputDirectory { get; set; }
+
+    /// <summary>True when outputs are redirected away from the source folders.</summary>
+    public bool HasOutputOverride => !string.IsNullOrWhiteSpace(OutputDirectory);
+
     public bool AnySelected => Formats != ExportFormat.None;
 
     /// <summary>Selected formats in canonical write order: TIF, then PSD, then JPG.</summary>

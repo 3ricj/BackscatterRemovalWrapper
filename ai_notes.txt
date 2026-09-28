@@ -9,6 +9,10 @@ Critical project settings, rules, and change history. Check this file before wor
   so upgrades replace instead of side-loading.
 - **Never overwrite existing outputs.** Per-format check: skip file only when ALL
   selected outputs exist; write only the missing formats otherwise.
+- **Output folder override** (v1.1.1): `ExportOptions.OutputDirectory` null/blank =
+  outputs beside each source (default). When set, ALL outputs go there; the folder is
+  created if missing and write-probed at batch start (before Photoshop is touched);
+  unwritable = abort with clear message. CLI flag: `-o`/`--output-dir`.
 - **Never modify originals**: every SaveAs uses `asCopy: true`; document is closed
   with `psDoNotSaveChanges` (2).
 - **Skip policy**: files whose name already ends in `-BSXT`, and documents that
@@ -23,6 +27,25 @@ Critical project settings, rules, and change history. Check this file before wor
 - Remote: https://github.com/3ricj/BackscatterRemovalWrapper (releases via GitHub).
 
 ## Version history
+
+### v1.1.1 — 2026-09-28 (tag v1.1.1)
+- **Output folder override**: GUI "Output folder:" row with Browse…/Clear buttons
+  (read-only TextBox shows `OutputFolderDisplay`); default = same folder as each
+  source. CLI: `-o`/`--output-dir <dir>`.
+- Write-permission check on Start: `BatchProcessor.Run` creates the override dir if
+  missing and probes it (`DirectoryHasWriteAccess`, temp-file write+delete); on
+  failure throws `InvalidOperationException` — GUI shows MessageBox, CLI prints
+  `Aborted: ...` and exits 4. Per-job source-folder check is skipped when overridden.
+- Core: `ExportOptions.OutputDirectory` + `HasOutputOverride`;
+  `OutputNameResolver.Resolve(source, format, outputDirectory)` overload; `ResolveAll`
+  honors `options.OutputDirectory`. CLI now uses `new ExportOptions()` (not the
+  `DefaultTiff` singleton) so `-o` mutation is safe.
+- Tests: 58 passing (3 new override tests in OutputNameResolverTests).
+- E2E (live Photoshop 27.10.0): `-f tif,psd -o testdata\out` wrote both outputs into
+  the (auto-created) override folder, nothing in source folder; re-run skipped with
+  "already exist"; `-o Z:\nope\dir` and an ACL-denied folder both aborted cleanly
+  before connecting to Photoshop. WPF launches OK with new row.
+- Version 1.1.1 in csproj + iss. Release: tag `v1.1.1`, asset `BsxtBatch-Setup-1.1.1.exe`.
 
 ### v1.1.0 — 2026-09-28 (tag v1.1)
 - Release published on GitHub: tag `v1.1`, asset `BsxtBatch-Setup-1.1.0.exe` (42 MB).
