@@ -25,6 +25,10 @@ Critical project settings, rules, and change history. Check this file before wor
 ## Version history
 
 ### v1.1.0 — 2026-09-28 (tag v1.1)
+- Release published on GitHub: tag `v1.1`, asset `BsxtBatch-Setup-1.1.0.exe` (42 MB).
+  https://github.com/3ricj/BackscatterRemovalWrapper/releases/tag/v1.1
+  (Repo has no `gh` CLI; releases were posted via GitHub REST using the credential
+  stored in Git Credential Manager — see commit 357c837.)
 - **Export options feature**: JPG / TIF / PSD checkboxes in the toolbar area; TIF is
   the default (only TIF checked at startup); at least one must remain selected —
   validation in `MainViewModel.RunAsync` (MessageBox + log) and a red inline warning.
