@@ -45,7 +45,10 @@ Critical project settings, rules, and change history. Check this file before wor
   the (auto-created) override folder, nothing in source folder; re-run skipped with
   "already exist"; `-o Z:\nope\dir` and an ACL-denied folder both aborted cleanly
   before connecting to Photoshop. WPF launches OK with new row.
-- Version 1.1.1 in csproj + iss. Release: tag `v1.1.1`, asset `BsxtBatch-Setup-1.1.1.exe`.
+- Version 1.1.1 in csproj + iss. Release published on GitHub: tag `v1.1.1`, asset
+  `BsxtBatch-Setup-1.1.1.exe` (42.2 MB), release id 398394209.
+  https://github.com/3ricj/BackscatterRemovalWrapper/releases/tag/v1.1.1
+  (Posted via GitHub REST + GCM token, same pattern as v1.1; temp script deleted.)
 
 ### v1.1.0 — 2026-09-28 (tag v1.1)
 - Release published on GitHub: tag `v1.1`, asset `BsxtBatch-Setup-1.1.0.exe` (42 MB).
