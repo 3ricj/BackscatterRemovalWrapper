@@ -18,6 +18,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private int _doneCount;
     private int _totalCount;
 
+    private bool _exportJpg;
+    private bool _exportTiff = true;   // default selection
+    private bool _exportPsd;
+
     public MainViewModel()
     {
         AddFilesCommand = new RelayCommand(_ => AddFilesViaDialog(), _ => !IsRunning);
@@ -68,6 +72,61 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public double ProgressPercent => TotalCount == 0 ? 0 : DoneCount * 100.0 / TotalCount;
 
     public string ProgressText => TotalCount == 0 ? "Ready" : $"{DoneCount}/{TotalCount}";
+
+    // ── Export format options ────────────────────────────────────────────────
+
+    /// <summary>JPG checkbox (unchecked by default).</summary>
+    public bool ExportJpg
+    {
+        get => _exportJpg;
+        set { _exportJpg = value; OnPropertyChanged(); OnExportFormatsChanged(); }
+    }
+
+    /// <summary>TIFF checkbox — the default export, checked on startup.</summary>
+    public bool ExportTiff
+    {
+        get => _exportTiff;
+        set { _exportTiff = value; OnPropertyChanged(); OnExportFormatsChanged(); }
+    }
+
+    /// <summary>PSD checkbox (unchecked by default). When selected the copy keeps layers.</summary>
+    public bool ExportPsd
+    {
+        get => _exportPsd;
+        set { _exportPsd = value; OnPropertyChanged(); OnExportFormatsChanged(); }
+    }
+
+    /// <summary>False while no format checkbox is selected — the Run button warns instead of running.</summary>
+    public bool HasExportFormatSelected => ExportJpg || ExportTiff || ExportPsd;
+
+    /// <summary>The current checkbox state as Core-level options.</summary>
+    public ExportOptions CurrentExportOptions
+    {
+        get
+        {
+            var formats = ExportFormat.None;
+            if (ExportJpg) formats |= ExportFormat.Jpeg;
+            if (ExportTiff) formats |= ExportFormat.Tiff;
+            if (ExportPsd) formats |= ExportFormat.Psd;
+            return new ExportOptions { Formats = formats };
+        }
+    }
+
+    private void OnExportFormatsChanged()
+    {
+        // Keep the job list's planned-output preview in sync and refresh validation.
+        foreach (var job in Jobs)
+            UpdateExpectedOutput(job);
+        OnPropertyChanged(nameof(HasExportFormatSelected));
+        RaiseCommands();
+    }
+
+    private void UpdateExpectedOutput(BatchJob job)
+    {
+        if (!HasExportFormatSelected) return;
+        var planned = OutputNameResolver.ResolveAll(job.SourcePath, CurrentExportOptions);
+        job.ExpectedOutputPath = planned.Count > 0 ? planned[0] : null;
+    }
 
     public RelayCommand AddFilesCommand { get; }
     public RelayCommand AddFolderCommand { get; }
@@ -128,7 +187,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
             {
                 SourcePath = path,
                 Kind = kind,
-                ExpectedOutputPath = OutputNameResolver.Resolve(path),
+                ExpectedOutputPath = HasExportFormatSelected
+                    ? OutputNameResolver.ResolveAll(path, CurrentExportOptions)[0]
+                    : null,
             });
             added++;
         }
@@ -157,6 +218,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private async Task RunAsync()
     {
+        if (!HasExportFormatSelected)
+        {
+            AppendLog("⚠ Select at least one export format (JPG, TIF, or PSD) before running.");
+            MessageBox.Show("Select at least one export format (JPG, TIF, or PSD).",
+                "BsxtBatch", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         foreach (var job in Jobs)
         {
             job.Status = JobStatus.Queued;
@@ -164,15 +233,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
             job.OutputPath = null;
         }
 
+        var export = CurrentExportOptions;
+
         _cts = new CancellationTokenSource();
         DoneCount = 0;
         TotalCount = Jobs.Count(j => j.Status == JobStatus.Queued);
         IsRunning = true;
-        AppendLog("── Batch started ──");
+        AppendLog($"── Batch started (export: {string.Join(" + ", export.Selected().Select(ExportOptions.ExtensionFor))}) ──");
 
         try
         {
-            var result = await _processor.RunAsync(Jobs.ToList(), _cts.Token);
+            var result = await _processor.RunAsync(Jobs.ToList(), export, _cts.Token);
             AppendLog($"── Batch finished: {result.Completed} ok, {result.Skipped} skipped, {result.Failed} failed ({result.Outcome}). ──");
         }
         catch (Exception ex)

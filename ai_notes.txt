@@ -1,0 +1,46 @@
+# BsxtBatch — AI working notes
+
+Critical project settings, rules, and change history. Check this file before working.
+
+## Critical settings / rules (do not break)
+
+- **Inno Setup `AppId`** in `installer/BsxtBatch.iss`:
+  `{{3D2A48FF-DC3E-4B9E-8111-AE056E8D63F0}` — must stay CONSTANT across all releases
+  so upgrades replace instead of side-loading.
+- **Never overwrite existing outputs.** Per-format check: skip file only when ALL
+  selected outputs exist; write only the missing formats otherwise.
+- **Never modify originals**: every SaveAs uses `asCopy: true`; document is closed
+  with `psDoNotSaveChanges` (2).
+- **Skip policy**: files whose name already ends in `-BSXT`, and documents that
+  already contain layers named `BSXT` or `Cleanup` (action not idempotent).
+- COM: all Photoshop calls run on a dedicated **STA thread**; `DisplayDialogs = 3`
+  (no dialogs); `OleMessageFilter` retries "application busy".
+- Dev-only scratch dirs (`spike/`, `testdata/`, `plans/`) are git-ignored.
+- Build/test: `dotnet build|test BsxtBatch.sln -c Release`.
+- Installer build:
+  `powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1 -Version <x.y.z>`
+  (requires Inno Setup 6; output `installer\Output\BsxtBatch-Setup-<version>.exe`).
+- Remote: https://github.com/3ricj/BackscatterRemovalWrapper (releases via GitHub).
+
+## Version history
+
+### v1.1.0 — 2026-09-28 (tag v1.1)
+- **Export options feature**: JPG / TIF / PSD checkboxes in the toolbar area; TIF is
+  the default (only TIF checked at startup); at least one must remain selected —
+  validation in `MainViewModel.RunAsync` (MessageBox + log) and a red inline warning.
+- New `ExportOptions` + `ExportFormat` flags in Core; canonical write order TIF→PSD→JPG.
+- PSD export keeps layers (`PhotoshopSaveOptions.Layers = true`,
+  `MaximizeCompatibility = 3`); TIFF/JPG remain flattened.
+- `OutputNameResolver.Resolve(source, format)` + `ResolveAll(source, options)`.
+- `BatchProcessor.RunAsync(jobs, export, ct)`; per-format never-overwrite: existing
+  outputs for one format don't block the others; detail lists what already existed.
+- CLI front-end gained `-f jpg,tif,psd` (default `tif`), `ExportOptions.FromCsv` parsing.
+- Removed now-unused `FileFormatClassifier.ExportsAsTiff`.
+- Tests updated/added (54 passing). E2E verified against live Photoshop 27.10.0:
+  all three formats written; PSD contains BSXT/Cleanup layer names; skip + partial-write
+  paths verified; default = TIF only.
+- Version bumped to 1.1.0 in `BsxtBatch.App.csproj` and `BsxtBatch.iss`.
+
+### v1.0.x (pre-existing)
+- Initial batch runner: Open → guard → DoAction → SaveAs (TIF/JPG by input kind) →
+  Close(discard). WPF UI, CLI, tests, per-user Inno installer.

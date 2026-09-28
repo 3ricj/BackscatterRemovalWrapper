@@ -15,6 +15,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" MinHeight="120" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="2*" MinHeight="100" />
@@ -28,12 +29,34 @@
             <Button Content="Clear List"    Command="{Binding ClearListCommand}"   Padding="12,4" />
         </StackPanel>
 
+        <!-- Export format options -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+            <TextBlock Text="Export:" VerticalAlignment="Center" FontWeight="Bold" Margin="0,0,8,0" />
+            <CheckBox Content="JPG" IsChecked="{Binding ExportJpg}" VerticalAlignment="Center" Margin="0,0,12,0" />
+            <CheckBox Content="TIF" IsChecked="{Binding ExportTiff}" VerticalAlignment="Center" Margin="0,0,12,0" />
+            <CheckBox Content="PSD (with layers)" IsChecked="{Binding ExportPsd}" VerticalAlignment="Center" Margin="0,0,12,0"
+                      ToolTip="Saves a layered Photoshop copy — the BSXT action's layers are preserved." />
+            <TextBlock VerticalAlignment="Center" Foreground="#C00000" FontWeight="SemiBold"
+                       Text="Select at least one export format!">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasExportFormatSelected}" Value="False">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </StackPanel>
+
         <!-- Hint -->
-        <TextBlock Grid.Row="1" Margin="0,8,0,8" Foreground="Gray" TextWrapping="Wrap"
-                   Text="Drop files or folders anywhere in this window. RAW / TIFF / PSD export as photo-BSXT.tif next to the original; JPG exports as photo-BSXT.jpg. Originals are never modified and existing files are never overwritten. Files that already contain BSXT/Cleanup layers are skipped." />
+        <TextBlock Grid.Row="2" Margin="0,8,0,8" Foreground="Gray" TextWrapping="Wrap"
+                   Text="Drop files or folders anywhere in this window. Each file exports as photo-BSXT.tif / .jpg / .psd (the formats selected above) next to the original; PSD copies keep the action's layers. Originals are never modified and existing files are never overwritten. Files that already contain BSXT/Cleanup layers are skipped." />
 
         <!-- Job list -->
-        <ListView Grid.Row="2" ItemsSource="{Binding Jobs}" SelectedItem="{Binding SelectedJob}">
+        <ListView Grid.Row="3" ItemsSource="{Binding Jobs}" SelectedItem="{Binding SelectedJob}">
             <ListView.View>
                 <GridView>
                     <GridViewColumn Header="File" Width="300">
@@ -63,7 +86,7 @@
         </ListView>
 
         <!-- Progress + run controls -->
-        <DockPanel Grid.Row="3" Margin="0,10,0,10">
+        <DockPanel Grid.Row="4" Margin="0,10,0,10">
             <Button DockPanel.Dock="Right" Content="Cancel" Command="{Binding CancelCommand}"
                     Padding="14,4" Margin="8,0,0,0" />
             <Button DockPanel.Dock="Right" Content="▶  Run BSXT Batch" Command="{Binding RunCommand}"
@@ -78,7 +101,7 @@
         </DockPanel>
 
         <!-- Log -->
-        <ListBox Grid.Row="4" ItemsSource="{Binding LogLines}" FontFamily="Consolas" FontSize="12"
+        <ListBox Grid.Row="5" ItemsSource="{Binding LogLines}" FontFamily="Consolas" FontSize="12"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" x:Name="LogBox" />
     </Grid>
 </Window>

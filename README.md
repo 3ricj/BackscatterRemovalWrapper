@@ -4,6 +4,10 @@ Batch-runs the Photoshop **BSXT** action on a pile of image files and exports
 `<name>-BSXT.<ext>` next to each original. Originals are never modified, and
 existing files are **never overwritten**.
 
+Pick the output format(s) with the **Export** checkboxes — **JPG**, **TIF**, and/or
+**PSD** (TIF is on by default, and at least one must stay checked). PSD copies keep
+the action's layers.
+
 Drop files (or whole folders) onto the window, press **Run BSXT Batch**, done.
 
 ## Requirements
@@ -36,7 +40,7 @@ From source (.NET 9 SDK):
 
 Build a Windows installer (per-user, no admin rights required):
 
-    powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1 -Version 1.0.0
+    powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1 -Version 1.1.0
 
 The script publishes the app as a self-contained single-file win-x64 exe, then compiles
 `installer\BsxtBatch.iss` with Inno Setup, producing:
@@ -56,16 +60,32 @@ stay constant across releases so upgrades replace rather than side-load.
 ## What it does
 
 For every file: `Open` → guard checks → `DoAction("BSXT_ACTION (Click Here)", "BSXT")`
-→ `SaveAs(<name>-BSXT.tif|jpg, asCopy: true)` → `Close(discard)`.
+→ `SaveAs(<name>-BSXT.<ext>, asCopy: true)` once per selected format → `Close(discard)`.
 
-| Input | Output |
-|---|---|
-| `.jpg` / `.jpeg` | `<name>-BSXT.jpg` (quality 12, embedded profile) |
-| `.tif/.tiff`, `.psd/.psb` | `<name>-BSXT.tif` (LZW, flattened, embedded profile) |
-| RAW (`.arw .cr2 .cr3 .nef .raf .orf .rw2 .dng` …) | `<name>-BSXT.tif` (via Camera Raw) |
+The export format is chosen by the user, not by the input type. Every selected format
+is written next to the original:
+
+| Selected format | Output | Details |
+|---|---|---|
+| **TIF** | `<name>-BSXT.tif` | LZW, flattened, embedded profile |
+| **JPG** | `<name>-BSXT.jpg` | quality 12, optimized, embedded profile |
+| **PSD** | `<name>-BSXT.psd` | **layers preserved**, embedded profile, maximized compatibility |
+
+Any combination is allowed (a file can produce all three). At least one format must be
+selected; **TIF is the default**. When PSD is selected, the saved copy keeps the BSXT
+action's layers instead of flattening them.
 
 Dialogs are suppressed (`DisplayDialogs = psDisplayNoDialogs`) so the batch never hangs;
 a COM message filter transparently retries Photoshop's "application busy" rejections.
+
+### Never-overwrite rule (per format)
+
+Each selected output is checked individually:
+
+- If **all** selected outputs already exist, the file is **skipped** with a message naming them.
+- If only **some** exist (e.g. you previously exported TIF and now also tick JPG), the
+  missing formats are written and the existing ones are left untouched — the log reports
+  exactly which were skipped.
 
 ### Files that are skipped (deliberately)
 
@@ -101,6 +121,10 @@ Publish a single-file exe:
 Headless pipeline check against a live Photoshop:
 
     tools\BsxtBatch.Cli\bin\Release\net9.0-windows\BsxtBatch.Cli.exe photo.ARW other.tif
+
+The CLI takes the same export selection via `-f` (default `tif`):
+
+    tools\BsxtBatch.Cli\bin\Release\net9.0-windows\BsxtBatch.Cli.exe -f tif,psd photo.ARW
 
 ## Troubleshooting
 

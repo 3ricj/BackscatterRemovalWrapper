@@ -33,10 +33,12 @@ public sealed class BatchProcessor
     public event Action<string>? Log;
 
     /// <summary>
-    /// Processes the given jobs. Returns when the queue drains, is cancelled, or the
-    /// action proves missing. Never throws for per-file problems — those land on the job.
+    /// Processes the given jobs, exporting each processed file in every format selected
+    /// in <paramref name="export"/> (at least one must be selected). Returns when the
+    /// queue drains, is cancelled, or the action proves missing. Never throws for
+    /// per-file problems — those land on the job.
     /// </summary>
-    public Task<BatchRunResult> RunAsync(IReadOnlyList<BatchJob> jobs, CancellationToken ct = default)
+    public Task<BatchRunResult> RunAsync(IReadOnlyList<BatchJob> jobs, ExportOptions export, CancellationToken ct = default)
     {
         // Photoshop COM demands an STA; run the whole loop on its own thread and surface
         // the result through the Task returned to the caller.
@@ -44,7 +46,7 @@ public sealed class BatchProcessor
 
         var worker = new Thread(() =>
         {
-            try { tcs.SetResult(Run(jobs, ct)); }
+            try { tcs.SetResult(Run(jobs, export, ct)); }
             catch (Exception ex) { tcs.SetException(ex); }
         })
         {
@@ -57,8 +59,11 @@ public sealed class BatchProcessor
         return tcs.Task;
     }
 
-    private BatchRunResult Run(IReadOnlyList<BatchJob> jobs, CancellationToken ct)
+    private BatchRunResult Run(IReadOnlyList<BatchJob> jobs, ExportOptions export, CancellationToken ct)
     {
+        if (!export.AnySelected)
+            throw new ArgumentException("At least one export format must be selected.", nameof(export));
+
         int completed = 0, skipped = 0, failed = 0;
 
         // Pre-flight (no Photoshop needed): reject unsupported kinds, our own outputs,
@@ -91,12 +96,14 @@ public sealed class BatchProcessor
                 continue;
             }
 
-            // Never overwrite: an existing output means the file was already processed
-            // (or the name is taken) — skip instead of clobbering.
-            var plannedOutput = OutputNameResolver.Resolve(job.SourcePath);
-            if (File.Exists(plannedOutput))
+            // Never overwrite: every selected output that already exists would be
+            // clobbered. Only when ALL selected outputs exist is the file skipped;
+            // when just some exist, the missing formats are still written (see Process).
+            var planned = OutputNameResolver.ResolveAll(job.SourcePath, export);
+            if (planned.All(File.Exists))
             {
-                Skip(job, $"Output '{Path.GetFileName(plannedOutput)}' already exists — not overwriting. Delete or rename it first.");
+                var names = string.Join("', '", planned.Select(Path.GetFileName));
+                Skip(job, $"Output(s) '{names}' already exist — not overwriting. Delete or rename them first.");
                 skipped++;
                 continue;
             }
@@ -132,12 +139,20 @@ public sealed class BatchProcessor
 
             try
             {
-                var outPath = ps.Process(job, ct);
+                var plannedForJob = OutputNameResolver.ResolveAll(job.SourcePath, export);
+                var written = ps.Process(job, export, ct);
+                var alreadyThere = plannedForJob.Except(written, StringComparer.OrdinalIgnoreCase)
+                                                   .Select(p => Path.GetFileName(p)).ToList();
+
                 job.Status = JobStatus.Completed;
-                job.OutputPath = outPath;
-                job.Detail = Path.GetFileName(outPath);
+                job.OutputPath = written.Count > 0 ? written[0] : null;
+                job.Detail = written.Count > 0
+                    ? string.Join(", ", written.Select(p => Path.GetFileName(p)))
+                    : "Nothing written.";
+                if (alreadyThere.Count > 0)
+                    job.Detail += $" (already existed, not overwritten: {string.Join(", ", alreadyThere)})";
                 completed++;
-                Log?.Invoke($"✔ {job.FileName} → {Path.GetFileName(outPath)}");
+                Log?.Invoke($"✔ {job.FileName} → {job.Detail}");
             }
             catch (AlreadyProcessedException ex)
             {

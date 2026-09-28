@@ -25,14 +25,6 @@ public class FileFormatClassifierTests
     public void Classify_maps_extensions(string path, FileKind expected)
         => Assert.Equal(expected, FileFormatClassifier.Classify(path));
 
-    [Theory]
-    [InlineData(FileKind.Jpeg, false)]
-    [InlineData(FileKind.Tiff, true)]
-    [InlineData(FileKind.Psd, true)]
-    [InlineData(FileKind.Raw, true)]
-    public void ExportsAsTiff_only_jpeg_exports_jpeg(FileKind kind, bool expected)
-        => Assert.Equal(expected, FileFormatClassifier.ExportsAsTiff(kind));
-
     [Fact]
     public void IsSupported_matches_classify()
     {

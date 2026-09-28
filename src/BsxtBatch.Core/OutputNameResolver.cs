@@ -2,23 +2,30 @@ using BsxtBatch.Core.Models;
 
 namespace BsxtBatch.Core;
 
-/// <summary>Builds the output path: same folder as the source, "-BSXT" appended to the
-/// file name, extension normalized per the approved format policy (JPG → .jpg,
-/// everything else → .tif).</summary>
+/// <summary>Builds output paths: same folder as the source, "-BSXT" appended to the
+/// file name, extension taken from the export format the user selected (JPG → .jpg,
+/// TIF → .tif, PSD → .psd). One output path per selected format.</summary>
 public static class OutputNameResolver
 {
     public const string Suffix = "-BSXT";
 
-    public static string Resolve(string sourcePath)
+    /// <summary>The single output path for one export format.</summary>
+    public static string Resolve(string sourcePath, ExportFormat format)
     {
         var dir = Path.GetDirectoryName(sourcePath)
                   ?? throw new ArgumentException($"'{sourcePath}' is not a file path.", nameof(sourcePath));
 
         var name = Path.GetFileNameWithoutExtension(sourcePath);
-        var kind = FileFormatClassifier.Classify(sourcePath);
-        var outExt = FileFormatClassifier.ExportsAsTiff(kind) ? ".tif" : ".jpg";
+        return Path.Combine(dir, name + Suffix + ExportOptions.ExtensionFor(format));
+    }
 
-        return Path.Combine(dir, name + Suffix + outExt);
+    /// <summary>All output paths for the selected formats, in canonical write order.</summary>
+    public static IReadOnlyList<string> ResolveAll(string sourcePath, ExportOptions options)
+    {
+        if (!options.AnySelected)
+            throw new ArgumentException("At least one export format must be selected.", nameof(options));
+
+        return options.Selected().Select(f => Resolve(sourcePath, f)).ToList();
     }
 
     /// <summary>Guards against feeding the tool its own outputs (photo-BSXT.tif →

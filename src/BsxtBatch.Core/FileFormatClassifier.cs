@@ -43,10 +43,6 @@ public static class FileFormatClassifier
         return FileKind.Unsupported;
     }
 
-    /// <summary>JPEG in → JPEG out; everything else (RAW/TIFF/PSD) → TIFF, per the
-    /// approved design decision to avoid lossy re-encode of camera data.</summary>
-    public static bool ExportsAsTiff(FileKind kind) => kind is not FileKind.Jpeg;
-
     /// <summary>True when the picker/importer should offer this file.</summary>
     public static bool IsSupported(string path) => Classify(path) != FileKind.Unsupported;
 }

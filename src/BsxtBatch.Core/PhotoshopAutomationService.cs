@@ -36,6 +36,7 @@ public sealed class PhotoshopAutomationService : IDisposable
     // Photoshop constants (PSObjectModel):
     private const int PsDisplayNoDialogs = 3;
     private const int PsDoNotSaveChanges = 2;
+    private const int PsMaximumMaximize = 3; // MaximizeType.Maximum
 
     // Layer names the BSXT action creates. If an opened document already contains any of
     // these, it has been processed before and running the action again fails (see guard).
@@ -83,18 +84,26 @@ public sealed class PhotoshopAutomationService : IDisposable
         get { try { return (string)_app.Version; } catch { return "unknown"; } }
     }
 
-    /// <summary>Runs the full pipeline for one job: Open → guard → DoAction → SaveAs (asCopy)
-    /// → Close(discard). The original file is never modified.
+    /// <summary>Runs the full pipeline for one job: Open → guard → DoAction → SaveAs
+    /// (asCopy) once per selected export format → Close(discard). The original file is
+    /// never modified. Each selected format keeps the never-overwrite rule individually:
+    /// if one selected output already exists it is skipped with the rest still written.
+    /// PSD output preserves the document layers (never flattened); TIFF/JPG are flattened
+    /// pixel copies as before.
+    /// Returns the list of paths actually written (may be a subset of the selection).
     /// Throws <see cref="AlreadyProcessedException"/> to signal a policy skip and
     /// <see cref="ActionMissingException"/> to signal a fatal, batch-aborting condition.</summary>
-    public string Process(BatchJob job, CancellationToken ct)
+    public IReadOnlyList<string> Process(BatchJob job, ExportOptions export, CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ct.ThrowIfCancellationRequested();
+        if (!export.AnySelected)
+            throw new ArgumentException("At least one export format must be selected.", nameof(export));
 
-        var outputPath = OutputNameResolver.Resolve(job.SourcePath);
+        var planned = OutputNameResolver.ResolveAll(job.SourcePath, export);
 
         dynamic doc = _app.Open(job.SourcePath);
+        var written = new List<string>();
         try
         {
             // Belt and braces: the action plays against the ACTIVE document — pin it to ours.
@@ -114,9 +123,21 @@ public sealed class PhotoshopAutomationService : IDisposable
                     $"Photoshop could not run action '{ActionName}' (set '{ActionSetName}'): {ex.Message}");
             }
 
-            dynamic saveOptions = CreateSaveOptions(FileFormatClassifier.ExportsAsTiff(job.Kind));
-            doc.SaveAs(outputPath, saveOptions, true /* asCopy — never touch the original */);
-            return outputPath;
+            foreach (var (format, path) in export.Selected().Zip(planned))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                // Never overwrite, per selected format: an existing output for one format
+                // does not block writing the others.
+                if (File.Exists(path))
+                    continue;
+
+                dynamic saveOptions = CreateSaveOptions(format);
+                doc.SaveAs(path, saveOptions, true /* asCopy — never touch the original */);
+                written.Add(path);
+            }
+
+            return written;
         }
         finally
         {
@@ -171,25 +192,42 @@ public sealed class PhotoshopAutomationService : IDisposable
                 m.Contains("is not a valid", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static dynamic CreateSaveOptions(bool isTiff)
+    private static dynamic CreateSaveOptions(ExportFormat format)
     {
-        var progId = isTiff ? "Photoshop.TIFFSaveOptions" : "Photoshop.JPEGSaveOptions";
+        var progId = format switch
+        {
+            ExportFormat.Tiff => "Photoshop.TIFFSaveOptions",
+            ExportFormat.Jpeg => "Photoshop.JPEGSaveOptions",
+            ExportFormat.Psd => "Photoshop.PhotoshopSaveOptions",
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unknown export format."),
+        };
         var optsType = Type.GetTypeFromProgID(progId)
             ?? throw new InvalidOperationException($"{progId} ProgID not found.");
         dynamic opts = Activator.CreateInstance(optsType)!;
 
-        if (isTiff)
+        switch (format)
         {
-            TrySet(() => opts.Layers = false);
-            TrySet(() => opts.EmbedColorProfile = true);
-            TrySet(() => opts.Compression = 1); // TIFFEncoding.LZW
-        }
-        else
-        {
-            TrySet(() => opts.Quality = 12);     // 0..12
-            TrySet(() => opts.EmbedColorProfile = true);
-            TrySet(() => opts.Optimized = true);
-            TrySet(() => opts.MatteStyle = 2);   // MattingType.None
+            case ExportFormat.Tiff:
+                TrySet(() => opts.Layers = false); // flattened pixel copy
+                TrySet(() => opts.EmbedColorProfile = true);
+                TrySet(() => opts.Compression = 1); // TIFFEncoding.LZW
+                break;
+
+            case ExportFormat.Jpeg:
+                TrySet(() => opts.Quality = 12);     // 0..12
+                TrySet(() => opts.EmbedColorProfile = true);
+                TrySet(() => opts.Optimized = true);
+                TrySet(() => opts.MatteStyle = 2);   // MattingType.None
+                break;
+
+            case ExportFormat.Psd:
+                // Keep the BSXT action's layers in the copy — that's the whole point
+                // of choosing PSD. Maximize compatibility embeds a flattened composite
+                // so other apps can still preview the file.
+                TrySet(() => opts.Layers = true);
+                TrySet(() => opts.EmbedColorProfile = true);
+                TrySet(() => opts.MaximizeCompatibility = PsMaximumMaximize);
+                break;
         }
 
         return opts;
