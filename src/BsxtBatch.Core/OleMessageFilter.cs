@@ -12,7 +12,10 @@ namespace BsxtBatch.Core;
 public sealed class OleMessageFilter : IOleMessageFilter
 {
     private const int RetryDelayMs = 250;
-    private const int MaxRetryMs = 5 * 60 * 1000; // keep retrying up to ~5 min per call
+    // Rejected calls only (Photoshop busy / modal). An accepted DoAction blocks inside
+    // the server for as long as the action runs — that hang is the 50-minute watchdog
+    // in PhotoshopAutomationService, not this filter.
+    private const int MaxRetryMs = 5 * 60 * 1000;
 
     private static OleMessageFilter? _registered;
     private static int _refCount;

@@ -11,6 +11,10 @@ public enum BatchOutcome
 
     /// <summary>The user cancelled; remaining jobs stay Queued.</summary>
     Cancelled,
+
+    /// <summary>Photoshop hung or exited and a new instance could not be started.
+    /// The current file is failed; remaining jobs stay Queued.</summary>
+    AbortedPhotoshopUnavailable,
 }
 
 public sealed record BatchRunResult(BatchOutcome Outcome, int Completed, int Skipped, int Failed, string? FatalError = null);
@@ -38,7 +42,10 @@ public sealed class BatchProcessor
     /// queue drains, is cancelled, or the action proves missing. Never throws for
     /// per-file problems — those land on the job.
     /// </summary>
-    public Task<BatchRunResult> RunAsync(IReadOnlyList<BatchJob> jobs, ExportOptions export, CancellationToken ct = default)
+    public Task<BatchRunResult> RunAsync(
+        IReadOnlyList<BatchJob> jobs,
+        ExportOptions export,
+        CancellationToken ct = default)
     {
         // Photoshop COM demands an STA; run the whole loop on its own thread and surface
         // the result through the Task returned to the caller.
@@ -138,70 +145,146 @@ public sealed class BatchProcessor
         if (runnable.Count == 0)
             return new BatchRunResult(BatchOutcome.Completed, completed, skipped, failed);
 
-        using var ps = PhotoshopAutomationService.Attach();
-        Log?.Invoke($"Connected to Photoshop {ps.Version}. {runnable.Count} file(s) queued.");
-
-        foreach (var job in runnable)
+        PhotoshopAutomationService? ps = null;
+        try
         {
-            if (ct.IsCancellationRequested)
-            {
-                Log?.Invoke("Cancelled — remaining files left queued.");
-                return new BatchRunResult(BatchOutcome.Cancelled, completed, skipped, failed);
-            }
+            ps = PhotoshopAutomationService.Attach();
+            var pidNote = ps.ProcessId is int pid ? $" (pid {pid})" : "";
+            Log?.Invoke($"Connected to Photoshop {ps.Version}{pidNote}. {runnable.Count} file(s) queued.");
+            if (ps.ProcessId is null)
+                Log?.Invoke("Could not identify which Photoshop process this is. If it hangs, every Photoshop window will be closed.");
+            if (ps.CrashMonitorWarning is { } warning)
+                Log?.Invoke(warning);
+            var timeoutMin = (int)PhotoshopAutomationService.FileAttemptTimeout.TotalMinutes;
+            Log?.Invoke(
+                $"A file still running after {timeoutMin} minutes is treated as a hang: Photoshop is closed, restarted, and that file is retried up to {PhotoshopAutomationService.MaxRetriesPerFile} times.");
 
-            job.Status = JobStatus.Running;
-            job.Detail = null;
-            JobStarting?.Invoke(job);
-            Log?.Invoke($"▶ {job.FileName}");
+            foreach (var job in runnable)
+            {
+                if (ct.IsCancellationRequested)
+                {
+                    Log?.Invoke("Cancelled — remaining files left queued.");
+                    return new BatchRunResult(BatchOutcome.Cancelled, completed, skipped, failed);
+                }
 
-            try
-            {
-                var plannedForJob = OutputNameResolver.ResolveAll(job.SourcePath, export);
-                var written = ps.Process(job, export, ct);
-                var alreadyThere = plannedForJob.Except(written, StringComparer.OrdinalIgnoreCase)
-                                                   .Select(p => Path.GetFileName(p)).ToList();
+                job.Status = JobStatus.Running;
+                job.Detail = "Working…";
+                JobStarting?.Invoke(job);
+                Log?.Invoke($"▶ {job.DisplayName}");
 
-                job.Status = JobStatus.Completed;
-                job.OutputPath = written.Count > 0 ? written[0] : null;
-                job.Detail = written.Count > 0
-                    ? string.Join(", ", written.Select(p => Path.GetFileName(p)))
-                    : "Nothing written.";
-                if (alreadyThere.Count > 0)
-                    job.Detail += $" (already existed, not overwritten: {string.Join(", ", alreadyThere)})";
-                completed++;
-                Log?.Invoke($"✔ {job.FileName} → {job.Detail}");
-            }
-            catch (AlreadyProcessedException ex)
-            {
-                job.Status = JobStatus.Skipped;
-                job.Detail = $"Already processed (contains a '{ex.OffendingLayer}' layer). Run BSXT only on un-edited files.";
-                skipped++;
-                Log?.Invoke($"⚠ {job.FileName}: {job.Detail}");
-            }
-            catch (ActionMissingException ex)
-            {
-                job.Status = JobStatus.Failed;
-                job.Detail = ex.Message;
-                failed++;
-                Log?.Invoke($"✖ FATAL: {ex.Message}");
-                Log?.Invoke("  Load the 'BSXT' action set in Photoshop (Actions panel ▸ Load Actions…) and start the batch again.");
-                return new BatchRunResult(BatchOutcome.AbortedMissingAction, completed, skipped, failed, ex.Message);
-            }
-            catch (OperationCanceledException)
-            {
-                job.Status = JobStatus.Queued;
-                Log?.Invoke($"■ {job.FileName} cancelled.");
-                return new BatchRunResult(BatchOutcome.Cancelled, completed, skipped, failed);
-            }
-            catch (Exception ex)
-            {
-                job.Status = JobStatus.Failed;
-                job.Detail = ex.Message;
-                failed++;
-                Log?.Invoke($"✖ {job.FileName}: {ex.Message}");
-            }
+                for (var attempt = 1; ; attempt++)
+                {
+                    try
+                    {
+                        if (ps is null)
+                            throw new InvalidOperationException("Photoshop is not connected.");
 
-            JobFinished?.Invoke(job);
+                        if (attempt > 1)
+                            job.Detail = $"Retry {attempt - 1} of {PhotoshopAutomationService.MaxRetriesPerFile}…";
+
+                        var photoshop = ps;
+                        var plannedForJob = OutputNameResolver.ResolveAll(job.SourcePath, export);
+                        var written = photoshop.Process(job, export, ct, elapsed =>
+                        {
+                            var mins = Math.Max(1, (int)elapsed.TotalMinutes);
+                            job.Detail = $"Working… {mins} min";
+                            Log?.Invoke($"… {job.DisplayName} still working ({mins} min).");
+                        });
+                        var alreadyThere = plannedForJob.Except(written, StringComparer.OrdinalIgnoreCase)
+                                                           .Select(p => Path.GetFileName(p)).ToList();
+
+                        job.Status = JobStatus.Completed;
+                        job.OutputPath = written.Count > 0 ? written[0] : null;
+                        job.Detail = written.Count > 0
+                            ? string.Join(", ", written.Select(p => Path.GetFileName(p)))
+                            : "Nothing written.";
+                        if (alreadyThere.Count > 0)
+                            job.Detail += $" (already existed, not overwritten: {string.Join(", ", alreadyThere)})";
+                        completed++;
+                        Log?.Invoke($"✔ {job.DisplayName} → {job.Detail}");
+                        break;
+                    }
+                    catch (AlreadyProcessedException ex)
+                    {
+                        job.Status = JobStatus.Skipped;
+                        job.Detail = $"Already processed (contains a '{ex.OffendingLayer}' layer). Run BSXT only on un-edited files.";
+                        skipped++;
+                        Log?.Invoke($"⚠ {job.DisplayName}: {job.Detail}");
+                        break;
+                    }
+                    catch (ActionMissingException ex)
+                    {
+                        job.Status = JobStatus.Failed;
+                        job.Detail = ex.Message;
+                        failed++;
+                        Log?.Invoke($"✖ FATAL: {ex.Message}");
+                        Log?.Invoke("  Load the 'BSXT' action set in Photoshop (Actions panel ▸ Load Actions…) and start the batch again.");
+                        JobFinished?.Invoke(job);
+                        return new BatchRunResult(BatchOutcome.AbortedMissingAction, completed, skipped, failed, ex.Message);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        job.Status = JobStatus.Queued;
+                        job.Detail = null;
+                        Log?.Invoke($"■ {job.DisplayName} cancelled.");
+                        return new BatchRunResult(BatchOutcome.Cancelled, completed, skipped, failed);
+                    }
+                    catch (PhotoshopUnresponsiveException ex)
+                    {
+                        if (attempt > PhotoshopAutomationService.MaxRetriesPerFile)
+                        {
+                            job.Status = JobStatus.Failed;
+                            job.Detail = $"Photoshop failed after {PhotoshopAutomationService.MaxRetriesPerFile} retries. {ex.Message}";
+                            failed++;
+                            Log?.Invoke($"✖ {job.DisplayName}: {job.Detail}");
+                            break;
+                        }
+
+                        Log?.Invoke($"⚠ {job.DisplayName}: {ex.Message}");
+                        Log?.Invoke($"  Restarting Photoshop — retry {attempt} of {PhotoshopAutomationService.MaxRetriesPerFile}.");
+                        job.Detail = $"{ex.Message.TrimEnd('.')} — retry {attempt} of {PhotoshopAutomationService.MaxRetriesPerFile}…";
+
+                        var previous = ps;
+                        ps = null;
+                        try
+                        {
+                            ps = RestartPhotoshop(previous, ct);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            job.Status = JobStatus.Queued;
+                            job.Detail = null;
+                            Log?.Invoke($"■ {job.DisplayName} cancelled.");
+                            return new BatchRunResult(BatchOutcome.Cancelled, completed, skipped, failed);
+                        }
+                        catch (Exception rex)
+                        {
+                            job.Status = JobStatus.Failed;
+                            job.Detail = $"Photoshop could not be restarted: {rex.Message}";
+                            failed++;
+                            Log?.Invoke($"✖ {job.DisplayName}: {job.Detail}");
+                            Log?.Invoke("Stopping the batch — remaining files left queued.");
+                            JobFinished?.Invoke(job);
+                            return new BatchRunResult(
+                                BatchOutcome.AbortedPhotoshopUnavailable, completed, skipped, failed, rex.Message);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        job.Status = JobStatus.Failed;
+                        job.Detail = ex.Message;
+                        failed++;
+                        Log?.Invoke($"✖ {job.DisplayName}: {ex.Message}");
+                        break;
+                    }
+                }
+
+                JobFinished?.Invoke(job);
+            }
+        }
+        finally
+        {
+            ps?.Dispose();
         }
 
         return new BatchRunResult(BatchOutcome.Completed, completed, skipped, failed);
@@ -211,8 +294,37 @@ public sealed class BatchProcessor
             job.Status = JobStatus.Skipped;
             job.Detail = reason;
             JobFinished?.Invoke(job);
-            Log?.Invoke($"⏭ {job.FileName}: {reason}");
+            Log?.Invoke($"⏭ {job.DisplayName}: {reason}");
         }
+    }
+
+    /// <summary>Drops the dead COM server, makes sure that Photoshop.exe is gone, then
+    /// starts a fresh instance. <paramref name="current"/> is disposed here.</summary>
+    private PhotoshopAutomationService RestartPhotoshop(PhotoshopAutomationService current, CancellationToken ct)
+    {
+        var pid = current.ProcessId;
+        try { current.Dispose(); }
+        catch (Exception ex) { Log?.Invoke($"  (while releasing Photoshop: {ex.Message})"); }
+
+        PhotoshopProcess.KillAndWait(pid);
+        Log?.Invoke("Starting Photoshop again…");
+
+        if (ct.CanBeCanceled)
+        {
+            if (ct.WaitHandle.WaitOne(TimeSpan.FromSeconds(3)))
+                throw new OperationCanceledException(ct);
+        }
+        else
+        {
+            Thread.Sleep(TimeSpan.FromSeconds(3));
+        }
+
+        var restarted = PhotoshopAutomationService.Attach();
+        var pidNote = restarted.ProcessId is int id ? $" (pid {id})" : "";
+        Log?.Invoke($"Reconnected to Photoshop {restarted.Version}{pidNote}.");
+        if (restarted.CrashMonitorWarning is { } warning)
+            Log?.Invoke(warning);
+        return restarted;
     }
 
     private static bool DirectoryHasWriteAccess(string dir)

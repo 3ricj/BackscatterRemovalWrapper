@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using System.Windows.Data;
 using BsxtBatch.Core;
 using BsxtBatch.Core.Models;
 using Microsoft.Win32;
@@ -23,13 +24,42 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _exportPsd;
     private string? _outputFolder;     // null/empty = same folder as each source
 
+    public IReadOnlyList<InputModeOption> InputModeOptions { get; } =
+    [
+        new(InputProcessMode.RawsOnly, "RAWs only"),
+        new(InputProcessMode.JpegsOnly, "JPGs only"),
+        new(InputProcessMode.Both, "Both"),
+    ];
+
+    private InputModeOption _selectedInputMode = null!;
+
+    /// <summary>Process dropdown. Default is Both (RAW, JPEG, TIFF, and PSD).</summary>
+    public InputModeOption SelectedInputMode
+    {
+        get => _selectedInputMode;
+        set
+        {
+            if (value is null || ReferenceEquals(_selectedInputMode, value))
+                return;
+            _selectedInputMode = value;
+            OnPropertyChanged();
+            ApplyTodoFilter();
+            RaiseCommands();
+        }
+    }
+
+    /// <summary>False while a batch is running — the Process dropdown stays put.</summary>
+    public bool CanEditSettings => !IsRunning;
+
     public MainViewModel()
     {
+        _selectedInputMode = InputModeOptions.First(o => o.Mode == InputProcessMode.Both);
+
         AddFilesCommand = new RelayCommand(_ => AddFilesViaDialog(), _ => !IsRunning);
         AddFolderCommand = new RelayCommand(_ => AddFolderViaDialog(), _ => !IsRunning);
         RemoveSelectedCommand = new RelayCommand(_ => RemoveSelected(), _ => !IsRunning && SelectedJob is not null);
         ClearListCommand = new RelayCommand(_ => ClearList(), _ => !IsRunning && Jobs.Count > 0);
-        RunCommand = new RelayCommand(async _ => await RunAsync(), _ => !IsRunning && Jobs.Any(j => j.Status == JobStatus.Queued));
+        RunCommand = new RelayCommand(async _ => await RunAsync(), _ => !IsRunning && Jobs.Any(j => IsInTodo(j) && j.Status == JobStatus.Queued));
         CancelCommand = new RelayCommand(_ => _cts?.Cancel(), _ => IsRunning);
         BrowseOutputFolderCommand = new RelayCommand(_ => BrowseOutputFolder(), _ => !IsRunning);
         ClearOutputFolderCommand = new RelayCommand(_ => ClearOutputFolder(), _ => !IsRunning && HasOutputFolderOverride);
@@ -37,6 +67,23 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _processor.Log += line => OnUi(() => AppendLog(line));
         _processor.JobStarting += _ => OnUi(() => { });          // status bindings refresh themselves
         _processor.JobFinished += _ => OnUi(BumpProgress);
+
+        ApplyTodoFilter();
+    }
+
+    /// <summary>Files the Process dropdown is currently willing to run. RAW-only and
+    /// JPG-only hide the rest of the list; those files stay loaded so switching back
+    /// to Both shows them again. They are never handed to the batch.</summary>
+    private bool IsInTodo(BatchJob job) => InputProcessModeInfo.Allows(SelectedInputMode.Mode, job.Kind);
+
+    private void ApplyTodoFilter()
+    {
+        var view = CollectionViewSource.GetDefaultView(Jobs);
+        var mode = SelectedInputMode.Mode;
+        if (mode == InputProcessMode.Both)
+            view.Filter = null;
+        else
+            view.Filter = item => item is BatchJob job && InputProcessModeInfo.Allows(mode, job.Kind);
     }
 
     public ObservableCollection<BatchJob> Jobs { get; } = [];
@@ -56,6 +103,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             _isRunning = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(CanEditSettings));
             RaiseCommands();
         }
     }
@@ -183,35 +231,63 @@ public sealed class MainViewModel : INotifyPropertyChanged
             Filter = "Supported images|*.jpg;*.jpeg;*.tif;*.tiff;*.psd;*.psb;*.arw;*.cr2;*.cr3;*.nef;*.raf;*.orf;*.rw2;*.dng|All files|*.*",
         };
         if (dlg.ShowDialog() == true)
-            AddPaths(dlg.FileNames);
+            AddPaths(dlg.FileNames, searchRoot: null);
     }
 
     public void AddFolderViaDialog()
     {
-        var dlg = new OpenFolderDialog { Title = "Select a folder of images to import" };
+        var dlg = new OpenFolderDialog { Title = "Select a folder of images to import (subfolders are included)" };
         if (dlg.ShowDialog() == true)
-            AddPaths(Directory.EnumerateFiles(dlg.FolderName)
-                .Where(FileFormatClassifier.IsSupported));
+            AddFolder(dlg.FolderName);
     }
 
-    /// <summary>Drag-and-drop entry point: files pass through, folders are expanded.</summary>
+    /// <summary>Drag-and-drop entry point: files pass through, folders are expanded recursively.</summary>
     public void AddDroppedPaths(IEnumerable<string> paths)
     {
-        var expanded = new List<string>();
+        var loose = new List<string>();
         foreach (var p in paths)
         {
             if (Directory.Exists(p))
-                expanded.AddRange(Directory.EnumerateFiles(p).Where(FileFormatClassifier.IsSupported));
+                AddFolder(p);
             else if (File.Exists(p))
-                expanded.Add(p);
+                loose.Add(p);
         }
-        AddPaths(expanded);
+        if (loose.Count > 0)
+            AddPaths(loose, searchRoot: null);
     }
 
-    private void AddPaths(IEnumerable<string> paths)
+    /// <summary>Imports every supported image under <paramref name="folder"/>, including
+    /// subfolders. Outputs stay beside each source; the list shows the path relative
+    /// to this folder.</summary>
+    private void AddFolder(string folder)
+    {
+        var root = Path.GetFullPath(folder);
+        try
+        {
+            var files = SourceFileFinder.EnumerateSupportedFiles(root);
+            if (files.Count == 0)
+            {
+                AppendLog($"No supported images under '{root}'.");
+                return;
+            }
+
+            var added = AddPaths(files, root);
+            if (added == 0)
+                AppendLog($"No new files under '{root}' (already in the list).");
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"Could not read folder '{root}': {ex.Message}");
+        }
+    }
+
+    /// <returns>How many new files were added.</returns>
+    private int AddPaths(IEnumerable<string> paths, string? searchRoot = null)
     {
         var existing = Jobs.Select(j => j.SourcePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var root = string.IsNullOrWhiteSpace(searchRoot) ? null : Path.GetFullPath(searchRoot);
         int added = 0;
+        int listed = 0;
 
         foreach (var path in paths.Select(Path.GetFullPath))
         {
@@ -220,20 +296,33 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var kind = FileFormatClassifier.Classify(path);
             if (kind == FileKind.Unsupported) continue;
 
-            Jobs.Add(new BatchJob
+            var job = new BatchJob
             {
                 SourcePath = path,
+                SearchRoot = root,
                 Kind = kind,
                 ExpectedOutputPath = HasExportFormatSelected
                     ? OutputNameResolver.ResolveAll(path, CurrentExportOptions)[0]
                     : null,
-            });
+            };
+            Jobs.Add(job);
             added++;
+            if (IsInTodo(job))
+                listed++;
         }
 
-        if (added > 0)
-            AppendLog($"Added {added} file(s).");
+        if (listed > 0)
+        {
+            AppendLog(root is null
+                ? $"Added {listed} file(s)."
+                : $"Added {listed} file(s) from '{root}', including subfolders.");
+        }
+        else if (added > 0)
+        {
+            AppendLog($"No {InputProcessModeInfo.Label(SelectedInputMode.Mode)} files to show.");
+        }
         RaiseCommands();
+        return added;
     }
 
     private void RemoveSelected()
@@ -276,7 +365,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        foreach (var job in Jobs)
+        var todo = Jobs.Where(IsInTodo).ToList();
+        foreach (var job in todo)
         {
             job.Status = JobStatus.Queued;
             job.Detail = null;
@@ -285,15 +375,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         _cts = new CancellationTokenSource();
         DoneCount = 0;
-        TotalCount = Jobs.Count(j => j.Status == JobStatus.Queued);
+        TotalCount = todo.Count;
         IsRunning = true;
         var formatsDesc = string.Join(" + ", export.Selected().Select(ExportOptions.ExtensionFor));
         var outputDesc = export.HasOutputOverride ? export.OutputDirectory : "source folders";
-        AppendLog($"── Batch started (export: {formatsDesc}; output: {outputDesc}) ──");
+        var processDesc = InputProcessModeInfo.Label(SelectedInputMode.Mode);
+        AppendLog($"── Batch started (process: {processDesc}; export: {formatsDesc}; output: {outputDesc}) ──");
 
         try
         {
-            var result = await _processor.RunAsync(Jobs.ToList(), export, _cts.Token);
+            var result = await _processor.RunAsync(todo, export, _cts.Token);
             AppendLog($"── Batch finished: {result.Completed} ok, {result.Skipped} skipped, {result.Failed} failed ({result.Outcome}). ──");
         }
         catch (Exception ex)
@@ -330,7 +421,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void BumpProgress()
     {
-        DoneCount = Jobs.Count(j => j.Status is JobStatus.Completed or JobStatus.Skipped or JobStatus.Failed);
+        DoneCount = Jobs.Count(j => IsInTodo(j) && j.Status is JobStatus.Completed or JobStatus.Skipped or JobStatus.Failed);
     }
 
     private void AppendLog(string line)
@@ -362,4 +453,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>One entry in the Process dropdown.</summary>
+public sealed class InputModeOption(InputProcessMode mode, string label)
+{
+    public InputProcessMode Mode { get; } = mode;
+    public string Label { get; } = label;
 }

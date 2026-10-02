@@ -30,8 +30,17 @@
             <Button Content="Clear List"    Command="{Binding ClearListCommand}"   Padding="12,4" />
         </StackPanel>
 
-        <!-- Export format options -->
+        <!-- Input filter + export format options -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+            <TextBlock Text="Process:" VerticalAlignment="Center" FontWeight="Bold" Margin="0,0,8,0" />
+            <ComboBox ItemsSource="{Binding InputModeOptions}"
+                      SelectedItem="{Binding SelectedInputMode}"
+                      DisplayMemberPath="Label"
+                      IsEnabled="{Binding CanEditSettings}"
+                      Width="128"
+                      VerticalAlignment="Center"
+                      Margin="0,0,16,0"
+                      ToolTip="Which source files to open. Both includes RAW, JPEG, TIFF, and PSD. RAWs only and JPGs only skip the rest." />
             <TextBlock Text="Export:" VerticalAlignment="Center" FontWeight="Bold" Margin="0,0,8,0" />
             <CheckBox Content="JPG" IsChecked="{Binding ExportJpg}" VerticalAlignment="Center" Margin="0,0,12,0" />
             <CheckBox Content="TIF" IsChecked="{Binding ExportTiff}" VerticalAlignment="Center" Margin="0,0,12,0" />
@@ -67,16 +76,16 @@
 
         <!-- Hint -->
         <TextBlock Grid.Row="3" Margin="0,8,0,8" Foreground="Gray" TextWrapping="Wrap"
-                   Text="Drop files or folders anywhere in this window. Each file exports as photo-BSXT.tif / .jpg / .psd (the formats selected above) — by default next to the original, or into the output folder above when overridden; PSD copies keep the action's layers. Originals are never modified and existing files are never overwritten. Files that already contain BSXT/Cleanup layers are skipped." />
+                   Text="Drop files or folders anywhere in this window. Folders include every subfolder; the list shows the path relative to the folder you added, and each result is written next to its source file (or into the output folder above when that is set). Process chooses RAWs only, JPGs only, or both (both also includes TIFF and PSD). Exports are photo-BSXT.tif / .jpg / .psd for the formats selected above; PSD copies keep the action's layers. Originals are never modified and existing files are never overwritten. If Photoshop hangs (no finish within 50 minutes) or quits, it is restarted and that file is retried up to 5 times. Files that already contain BSXT/Cleanup layers are skipped." />
 
         <!-- Job list -->
         <ListView Grid.Row="4" ItemsSource="{Binding Jobs}" SelectedItem="{Binding SelectedJob}">
             <ListView.View>
                 <GridView>
-                    <GridViewColumn Header="File" Width="300">
+                    <GridViewColumn Header="File" Width="380">
                         <GridViewColumn.CellTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding FileName}" ToolTip="{Binding SourcePath}" />
+                                <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding SourcePath}" />
                             </DataTemplate>
                         </GridViewColumn.CellTemplate>
                     </GridViewColumn>

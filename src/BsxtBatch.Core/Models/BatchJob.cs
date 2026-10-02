@@ -12,7 +12,40 @@ public sealed class BatchJob : INotifyPropertyChanged
 
     public required string SourcePath { get; init; }
 
+    /// <summary>Folder this file was discovered under. Set for folder imports (the
+    /// search includes subfolders); null when the file was added on its own.
+    /// <see cref="DisplayName"/> is relative to this root.</summary>
+    public string? SearchRoot { get; init; }
+
     public string FileName => System.IO.Path.GetFileName(SourcePath);
+
+    /// <summary>File name, or the path relative to <see cref="SearchRoot"/> for files
+    /// that came from a folder search.</summary>
+    public string DisplayName
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(SearchRoot))
+                return FileName;
+
+            string relative;
+            try { relative = System.IO.Path.GetRelativePath(SearchRoot, SourcePath); }
+            catch { return FileName; }
+
+            // A different drive comes back fully qualified; ".." means the file
+            // is not under the folder that was searched.
+            if (string.IsNullOrEmpty(relative) || relative == "."
+                || Path.IsPathRooted(relative) || IsOutsideRoot(relative))
+                return FileName;
+
+            return relative;
+        }
+    }
+
+    private static bool IsOutsideRoot(string relative)
+        => relative == ".."
+           || relative.StartsWith(".." + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal)
+           || relative.StartsWith(".." + System.IO.Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
 
     public FileKind Kind { get; init; }
 
